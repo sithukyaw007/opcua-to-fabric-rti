@@ -18,9 +18,9 @@ jobs:
         python-version: ["3.10", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -33,10 +33,12 @@ jobs:
         run: pytest -q tests/test_bridge.py
 
       - name: Start the OPC PLC simulator
+        # The TCP port opens before the OPC UA server is running, so wait for the simulator's
+        # own "started" message rather than for the port.
         run: |
           docker compose up -d
-          for i in $(seq 1 30); do
-            python -c "import socket; socket.create_connection(('localhost', 50000), 2)" && exit 0
+          for i in $(seq 1 45); do
+            docker logs opcplc 2>&1 | grep -q "PLC simulation started" && exit 0
             sleep 2
           done
           docker logs opcplc

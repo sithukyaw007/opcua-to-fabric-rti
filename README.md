@@ -236,6 +236,9 @@ docker compose up -d                                      # OPC PLC simulator
 OPCUA_TEST_URL=opc.tcp://localhost:50000 pytest           # plus integration tests
 ```
 
+The simulator takes a few seconds after `docker compose up` before it accepts OPC UA sessions
+(until then they fail with `BadServerHalted`). The integration tests wait for it automatically.
+
 The GitHub Actions workflow in `.github/workflows/ci.yml` runs the same tests on Python 3.10 and
 3.12, then a `--browse` and `--dry-run` smoke test against the simulator.
 
@@ -252,6 +255,7 @@ Python 3.13, on a Fabric F-SKU capacity:
 
 | Symptom | Things to check |
 |---|---|
+| `BadServerHalted` right after starting the simulator | The server is still starting. Wait until `docker logs opcplc` shows "PLC simulation started" |
 | `BadSecurityChecksFailed` or a certificate error | Trust the bridge certificate on the OPC UA server (and the reverse), and check the security policy and mode |
 | `BadNodeIdUnknown` / "Could not subscribe" | NodeIds or the namespace index are wrong. Run `--browse` |
 | `--browse` doesn't show your tags | Use `--browse-root <NodeId>` to start lower in the tree, or raise `--max-nodes` |

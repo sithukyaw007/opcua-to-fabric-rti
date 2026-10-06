@@ -4,13 +4,35 @@ Skipped unless OPCUA_TEST_URL is set, e.g.  OPCUA_TEST_URL=opc.tcp://localhost:5
 """
 import asyncio
 import os
+import time
 
 import pytest
+from asyncua import Client
 
 import opcua_to_eventstream as bridge
 
 URL = os.getenv("OPCUA_TEST_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="set OPCUA_TEST_URL to run against an OPC UA server")
+
+
+async def _server_running() -> bool:
+    try:
+        async with Client(URL, timeout=5) as client:
+            await client.get_node(bridge.SERVER_STATE_NODE).read_value()
+        return True
+    except Exception:
+        return False
+
+
+@pytest.fixture(scope="module", autouse=True)
+def wait_for_server():
+    """The simulator accepts TCP connections a few seconds before its OPC UA server is running
+    (sessions fail with BadServerHalted until then), so wait for a real OPC UA session."""
+    deadline = time.monotonic() + 90
+    while not asyncio.run(_server_running()):
+        if time.monotonic() > deadline:
+            pytest.fail(f"OPC UA server at {URL} isn't ready after 90 seconds")
+        time.sleep(2)
 
 
 def simulator_machine() -> bridge.MachineConfig:
