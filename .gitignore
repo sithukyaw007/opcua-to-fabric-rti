@@ -1,0 +1,17 @@
+# Secrets and local data
+.env
+*.pem
+*.der
+*.pfx
+certs/
+pki/
+unsent_events.jsonl
+config/machines.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/

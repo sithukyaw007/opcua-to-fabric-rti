@@ -1,0 +1,88 @@
+// =====================================================================================
+// Medallion layers for OPC UA telemetry in a Fabric Eventhouse (KQL database)
+// Run each command separately in a KQL queryset (select the command, then Run).
+// SAMPLE - review names, retention and caching for your environment.
+// =====================================================================================
+
+// -------------------------------------------------------------------------------------
+// 1. BRONZE - raw events exactly as sent by the bridge
+//    Create this table first, then point the Eventstream "Eventhouse" destination at it
+//    (data format: JSON, table: existing > opcua_bronze).
+// -------------------------------------------------------------------------------------
+.create-merge table opcua_bronze (
+    machineId: string,
+    runId: string,
+    gatewayId: string,
+    nodeId: string,
+    tag: string,
+    value: dynamic,
+    statusGood: bool,
+    sourceTimestamp: datetime,
+    ingestTimestamp: datetime
+)
+
+// Keep raw data for 30 days (adjust to your needs)
+.alter-merge table opcua_bronze policy retention softdelete = 30d recoverability = enabled
+
+// -------------------------------------------------------------------------------------
+// 2. SILVER - typed and cleaned values, filled automatically by an update policy
+// -------------------------------------------------------------------------------------
+.create-merge table opcua_silver (
+    machineId: string,
+    runId: string,
+    tag: string,
+    valueNum: real,
+    valueText: string,
+    statusGood: bool,
+    sourceTimestamp: datetime,
+    ingestTimestamp: datetime
+)
+
+.create-or-alter function with (folder = "medallion", docstring = "Bronze to silver: typed, cleaned OPC UA values")
+fn_opcua_bronze_to_silver() {
+    opcua_bronze
+    | where isnotempty(machineId) and isnotempty(tag) and isnotnull(sourceTimestamp)
+    | extend valueNum = case(
+        gettype(value) == "bool", iif(tobool(value), 1.0, 0.0),
+        todouble(value))
+    | project machineId, runId, tag, valueNum, valueText = tostring(value),
+              statusGood, sourceTimestamp, ingestTimestamp
+}
+
+.alter table opcua_silver policy update
+@'[{"IsEnabled": true, "Source": "opcua_bronze", "Query": "fn_opcua_bronze_to_silver()", "IsTransactional": false, "PropagateIngestionProperties": false}]'
+
+// Remove duplicates (for example after the bridge replays spooled events).
+// Created synchronously because the table is new and empty. If you add this view to a table
+// that already holds a lot of data, use ".create async" and wait until the operation has
+// completed (.show operations <OperationId>) before creating the gold view below.
+.create ifnotexists materialized-view with (backfill = true, docString = "Silver without duplicates")
+opcua_silver_dedup on table opcua_silver
+{
+    opcua_silver
+    | summarize take_any(*) by machineId, tag, sourceTimestamp
+}
+
+// -------------------------------------------------------------------------------------
+// 3. GOLD - 1-minute statistics per machine, run and tag (ready for dashboards,
+//    semantic models and Fabric data agents). Built on the de-duplicated view, so the
+//    view above must exist first.
+// -------------------------------------------------------------------------------------
+.create ifnotexists materialized-view with (docString = "1-minute statistics per machine, run and tag")
+opcua_gold_1min on materialized-view opcua_silver_dedup
+{
+    opcua_silver_dedup
+    | where statusGood
+    | summarize avgValue = avg(valueNum), minValue = min(valueNum), maxValue = max(valueNum), samples = count()
+        by machineId, runId, tag, minute = bin(sourceTimestamp, 1m)
+}
+
+// -------------------------------------------------------------------------------------
+// 4. ONELAKE - expose the silver TABLE as a Delta table in OneLake (for the lakehouse,
+//    notebooks, Power BI Direct Lake and external semantic layers). Materialised views
+//    (opcua_silver_dedup, opcua_gold_1min) can't be mirrored - query them with KQL, or
+//    de-duplicate on machineId, tag, sourceTimestamp when reading silver from OneLake.
+//    Default write delay is up to 3 hours; 5 minutes is the minimum. Shorter delays
+//    create more, smaller files.
+// -------------------------------------------------------------------------------------
+.alter-merge table opcua_silver policy mirroring dataformat=parquet with (IsEnabled=true, TargetLatencyInMinutes=5)

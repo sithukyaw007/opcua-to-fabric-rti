@@ -1,0 +1,35 @@
+{
+  "machines": [
+    {
+      "machineId": "machine-01",
+      "endpoint": "opc.tcp://localhost:50000",
+      "publishingIntervalMs": 1000,
+      "samplingIntervalMs": null,
+      "queueSize": 1,
+      "security": null,
+      "usernameEnv": null,
+      "passwordEnv": null,
+      "nodes": {
+        "ns=3;s=SpikeData": "Temperature",
+        "ns=3;s=PositiveTrendData": "Pressure",
+        "ns=3;s=FastUInt1": "SpindleSpeed",
+        "ns=3;s=AlternatingBoolean": "HeaterOn"
+      }
+    },
+    {
+      "machineId": "machine-02",
+      "endpoint": "opc.tcp://<machine-02-host>:4840",
+      "publishingIntervalMs": 1000,
+      "samplingIntervalMs": 100,
+      "queueSize": 10,
+      "security": "Basic256Sha256,SignAndEncrypt,certs/client_cert.der,certs/client_key.pem,certs/machine-02_server_cert.der",
+      "usernameEnv": "M02_OPCUA_USER",
+      "passwordEnv": "M02_OPCUA_PASSWORD",
+      "nodes": {
+        "<NodeId-1 from --browse>": "RecipeSetPower",
+        "<NodeId-2 from --browse>": "ActualPower",
+        "<NodeId-3 from --browse>": "SurfaceRoughness"
+      }
+    }
+  ]
+}

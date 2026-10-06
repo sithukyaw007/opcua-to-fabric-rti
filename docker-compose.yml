@@ -1,0 +1,11 @@
+# OPC PLC simulator for local testing only (not for production).
+# Start:  docker compose up -d     Endpoint: opc.tcp://localhost:50000
+# The image tag is pinned so tests stay repeatable. Check for newer tags at
+# https://mcr.microsoft.com/v2/iotedge/opc-plc/tags/list before updating it.
+services:
+  opcplc:
+    image: mcr.microsoft.com/iotedge/opc-plc:2.15.9
+    container_name: opcplc
+    command: ["--pn=50000", "--autoaccept", "--ut", "--fn=5", "--fr=1", "--ft=uint", "--sn=5", "--sr=10"]
+    ports:
+      - "50000:50000"

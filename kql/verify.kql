@@ -1,0 +1,26 @@
+// Quick checks after starting the bridge (run each query separately)
+
+// Events received in the last 15 minutes, per machine and tag
+opcua_bronze
+| where ingestion_time() > ago(15m)
+| summarize events = count(), lastValue = take_any(value), lastEvent = max(sourceTimestamp) by machineId, tag
+| order by machineId asc, tag asc
+
+// End-to-end delay from machine to Eventhouse (seconds)
+opcua_bronze
+| where ingestion_time() > ago(15m)
+| extend delaySec = datetime_diff('second', ingestion_time(), sourceTimestamp)
+| summarize avgDelaySec = avg(delaySec), p95DelaySec = percentile(delaySec, 95) by machineId
+
+// Trend of one tag (silver layer)
+opcua_silver_dedup
+| where sourceTimestamp > ago(1h) and tag == "Temperature"
+| summarize avgValue = avg(valueNum) by machineId, bin(sourceTimestamp, 10s)
+| render timechart
+
+// Statistics per experiment run (gold layer)
+opcua_gold_1min
+| where isnotempty(runId)
+| summarize avgValue = avg(avgValue), minValue = min(minValue), maxValue = max(maxValue), samples = sum(samples)
+    by runId, machineId, tag
+| order by runId asc, machineId asc, tag asc
